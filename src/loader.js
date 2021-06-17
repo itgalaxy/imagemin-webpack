@@ -9,8 +9,6 @@ import imageminMinify from "./utils/imageminMinify";
  * @property {FilterFn} [filter] Allows filtering of images for optimization.
  * @property {string} [severityError] Allows to choose how errors are displayed.
  * @property {MinimizerOptions} [minimizerOptions] Options for `imagemin`.
- * @property {string} [filename] Allows to set the filename for the generated asset. Useful for converting to a `webp`.
- * @property {boolean} [deleteOriginalAssets] Allows to remove original assets. Useful for converting to a `webp` and remove original assets.
  * @property {MinifyFunctions} [minify]
  */
 
@@ -19,6 +17,7 @@ import imageminMinify from "./utils/imageminMinify";
 /** @typedef {import("./index").MinimizerOptions} MinimizerOptions */
 /** @typedef {import("./index").MinifyFunctions} MinifyFunctions */
 /** @typedef {import("./index").InternalMinifyOptions} InternalMinifyOptions */
+/** @typedef {import("./index").InternalMinifyResultEntry} InternalMinifyResultEntry */
 /** @typedef {import("schema-utils/declarations/validate").Schema} Schema */
 /** @typedef {import("webpack").LoaderContext<LoaderOptions>} LoaderContext */
 /** @typedef {import("webpack").Compilation} Compilation */
@@ -32,12 +31,6 @@ module.exports = async function loader(content) {
   const callback = this.async();
   const name = path.relative(this.rootContext, this.resourcePath);
 
-  if (options.filter && !options.filter(content, name)) {
-    callback(null, content);
-
-    return;
-  }
-
   const input = content;
 
   const { severityError, minimizerOptions } = options;
@@ -49,50 +42,76 @@ module.exports = async function loader(content) {
     severityError,
     minimizerOptions,
     isProductionMode: this.mode === "production" || !this.mode,
+    getPathWithInfoFn: /** @type Compilation */ (
+      this._compilation
+    ).getPathWithInfo.bind(this._compilation),
   });
 
-  const output = await minify(minifyOptions);
+  let output = await minify(minifyOptions);
+  let hasError = false;
 
-  if (output.errors && output.errors.length > 0) {
-    output.errors.forEach((warning) => {
-      this.emitError(warning);
-    });
+  output = output.filter((file) => file.type !== "removed");
 
+  for (let i = 0; i <= output.length - 1; i++) {
+    const file = output[i];
+
+    if (file.errors.length > 0) {
+      file.errors.forEach((error) => {
+        this.emitError(error);
+      });
+
+      hasError = true;
+    }
+  }
+
+  if (hasError) {
     callback(null, content);
 
     return;
   }
 
-  if (output.warnings && output.warnings.length > 0) {
-    output.warnings.forEach((warning) => {
-      this.emitWarning(warning);
-    });
-  }
+  let emmited = false;
 
-  const source = output.data;
-  const { path: newName } = /** @type {Compilation} */ (
-    this._compilation
-  ).getPathWithInfo(options.filename || "[path][name][ext]", {
-    filename: name,
-  });
+  for (let i = 0; i <= output.length - 1; i++) {
+    const file = output[i];
 
-  const isNewAsset = name !== newName;
-
-  if (isNewAsset) {
-    this.emitFile(newName, source.toString(), "", {
-      minimized: true,
-    });
-
-    if (options.deleteOriginalAssets) {
-      // TODO remove original asset
+    if (file.warnings && file.warnings.length > 0) {
+      file.warnings.forEach((warning) => {
+        this.emitWarning(warning);
+      });
     }
 
+    // @ts-ignore
+    file.source = file.data;
+
+    // eslint-disable-next-line default-case
+    switch (file.type) {
+      case "removed":
+        // TODO remove original asset
+        break;
+      case "generated":
+        this.emitFile(
+          // @ts-ignore
+          file.filename,
+          // @ts-ignore
+          file.source.toString(),
+          "",
+          { minimized: true }
+        );
+
+        emmited = true;
+    }
+  }
+
+  if (emmited) {
     callback(null, content);
 
     return;
   }
 
-  callback(null, source);
+  // Todo add export for multiple assets
+  // @ts-ignore
+  callback(null, output.length === 1 ? output[0].source : content);
 };
 
 module.exports.raw = true;

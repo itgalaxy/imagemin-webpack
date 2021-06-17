@@ -10,6 +10,7 @@ export type ImageminOptions = import("imagemin").Options;
 export type LoaderOptions = import("./loader").LoaderOptions;
 export type ImageminMinifyFunction = typeof imageminMinify;
 export type SquooshMinifyFunction = typeof squooshMinify;
+export type squooshTransformerFunction = typeof squooshGenerate;
 export type Rule = RegExp | string;
 export type Rules = Rule[] | Rule;
 export type FilterFn = (source: Buffer, sourcePath: string) => boolean;
@@ -41,13 +42,18 @@ export type InternalMinifyOptions = {
   severityError?: string | undefined;
   minimizerOptions?: MinimizerOptions | undefined;
   minify: MinifyFunctions;
+  info?: import("webpack").AssetInfo | undefined;
+  getPathWithInfoFn: Compilation["getPathWithInfo"];
 };
-export type InternalMinifyResult = {
+export type InternalMinifyResultEntry = {
   data: Buffer;
   filename: string;
   warnings: Array<Error>;
   errors: Array<Error>;
+  filenameTemplate: string;
+  type?: string | undefined;
 };
+export type InternalMinifyResult = InternalMinifyResultEntry[];
 export type CustomMinifyFunction = (
   data: DataForMinifyFn,
   minifyOptions: CustomFnMinimizerOptions
@@ -56,11 +62,14 @@ export type MinifyFunctions =
   | ImageminMinifyFunction
   | SquooshMinifyFunction
   | CustomMinifyFunction;
-export type MinifyFnResult = {
+export type MinifyFnResultEntry = {
+  filename: string;
   data: Buffer;
   warnings: Array<Error>;
   errors: Array<Error>;
+  type?: string | undefined;
 };
+export type MinifyFnResult = MinifyFnResultEntry | MinifyFnResultEntry[];
 export type InternalLoaderOptions = {
   /**
    * Test to match files against.
@@ -138,6 +147,7 @@ export type PluginOptions = {
 /** @typedef {import("./loader").LoaderOptions} LoaderOptions */
 /** @typedef {import("./utils/imageminMinify").default} ImageminMinifyFunction */
 /** @typedef {import("./utils/squooshMinify").default} SquooshMinifyFunction */
+/** @typedef {import("./utils/squooshGenerate").default} squooshTransformerFunction */
 /** @typedef {RegExp | string} Rule */
 /** @typedef {Rule[] | Rule} Rules */
 /**
@@ -172,13 +182,20 @@ export type PluginOptions = {
  * @property {string} [severityError]
  * @property {MinimizerOptions} [minimizerOptions]
  * @property {MinifyFunctions} minify
+ * @property {AssetInfo} [info]
+ * @property {Compilation["getPathWithInfo"]} getPathWithInfoFn
  */
 /**
- * @typedef {Object} InternalMinifyResult
+ * @typedef {Object} InternalMinifyResultEntry
  * @property {Buffer} data
  * @property {string} filename
  * @property {Array<Error>} warnings
  * @property {Array<Error>} errors
+ * @property {string} filenameTemplate
+ * @property {string} [type]
+ */
+/**
+ * @typedef {InternalMinifyResultEntry[]} InternalMinifyResult
  */
 /**
  * @callback CustomMinifyFunction
@@ -190,10 +207,15 @@ export type PluginOptions = {
  * @typedef {ImageminMinifyFunction | SquooshMinifyFunction | CustomMinifyFunction} MinifyFunctions
  */
 /**
- * @typedef {Object} MinifyFnResult
+ * @typedef {Object} MinifyFnResultEntry
+ * @property {string} filename
  * @property {Buffer} data
  * @property {Array<Error>} warnings
  * @property {Array<Error>} errors
+ * @property {string} [type]
+ */
+/**
+ * @typedef {MinifyFnResultEntry | MinifyFnResultEntry[]} MinifyFnResult
  */
 /**
  * @typedef {Object} InternalLoaderOptions
@@ -238,16 +260,28 @@ declare class ImageMinimizerPlugin {
   options: {
     minify: MinifyFunctions;
     severityError: string | undefined;
-    filter: FilterFn;
     exclude: Rules | undefined;
     minimizerOptions: MinimizerOptions;
     include: Rules | undefined;
     loader: boolean;
     maxConcurrency: number | undefined;
     test: Rules;
-    filename: string | FilenameFn;
-    deleteOriginalAssets: boolean;
   };
+  /**
+   *
+   * @param {(InternalMinifyResultEntry & {source: Buffer} )[]} data
+   * @returns (InternalMinifyResultEntry & {source: Buffer} )[]
+   */
+  createCacheData(
+    data: (InternalMinifyResultEntry & {
+      source: Buffer;
+    })[]
+  ): {
+    source: Buffer;
+    filename: string;
+    warnings: Error[];
+    type: string | undefined;
+  }[];
   /**
    * @private
    * @param {Compiler} compiler
@@ -267,7 +301,11 @@ declare namespace ImageMinimizerPlugin {
   export { normalizeImageminConfig };
   export { imageminMinify };
   export { squooshMinify };
+  export { imageminGenerate };
+  export { squooshGenerate };
 }
 import imageminMinify from "./utils/imageminMinify";
 import squooshMinify from "./utils/squooshMinify";
+import squooshGenerate from "./utils/squooshGenerate";
 import { normalizeImageminConfig } from "./utils/imageminMinify";
+import imageminGenerate from "./utils/imageminGenerate";

@@ -4,14 +4,16 @@ import path from "path";
 import imagemin from "imagemin";
 import imageminMozjpeg from "imagemin-mozjpeg";
 import imageminSvgo from "imagemin-svgo";
+import imageminWebp from "imagemin-webp";
 import pify from "pify";
+import fileType from "file-type";
 
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { extendDefaultPlugins } from "svgo";
 
 import minify from "../src/minify";
 
-import imageminMinify from "../src/utils/imageminMinify";
+import ImageMinimizerPlugin from "../src";
 
 function isPromise(obj) {
   return (
@@ -21,6 +23,8 @@ function isPromise(obj) {
   );
 }
 
+const getPathWithInfoFn = ({ filename }) => ({ path: filename });
+
 describe("minify", () => {
   it("minify should be is function", () =>
     expect(typeof minify === "function").toBe(true));
@@ -28,20 +32,29 @@ describe("minify", () => {
   it("should return `Promise`", () =>
     expect(
       isPromise(
-        minify([{ minify: imageminMinify, input: Buffer.from("Foo") }], {
-          minify: imageminMinify,
-          minimizerOptions: { plugins: ["mozjpeg"] },
-        })
+        minify(
+          [
+            {
+              minify: ImageMinimizerPlugin.imageminMinify,
+              input: Buffer.from("Foo"),
+            },
+          ],
+          {
+            minify: ImageMinimizerPlugin.imageminMinify,
+            minimizerOptions: { plugins: ["mozjpeg"] },
+          }
+        )
       )
     ).toBe(true));
 
   it("should optimize", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: ["mozjpeg"],
       },
@@ -61,10 +74,11 @@ describe("minify", () => {
   it("should optimize (relative filename)", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename: path.relative(process.cwd(), filename),
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: ["mozjpeg"],
       },
@@ -98,10 +112,11 @@ describe("minify", () => {
       "./fixtures/large-after-optimization.svg"
     );
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: { plugins: [["svgo", svgoOptions]] },
     });
 
@@ -116,7 +131,7 @@ describe("minify", () => {
   });
 
   it("should throw error on empty", async () => {
-    const result = await minify([{}]);
+    const [result] = await minify([{}]);
 
     expect(result.warnings).toHaveLength(0);
     expect(result.errors).toHaveLength(1);
@@ -129,7 +144,12 @@ describe("minify", () => {
   it("should throw error on empty `imagemin` options", async () => {
     const input = Buffer.from("Foo");
     const filename = path.resolve("foo.png");
-    const result = await minify({ minify: imageminMinify, input, filename });
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
+      input,
+      filename,
+      getPathWithInfoFn,
+    });
 
     expect(result.warnings).toHaveLength(1);
     expect(result.warnings[0].toString()).toMatch(
@@ -143,10 +163,11 @@ describe("minify", () => {
   it("should throw error on empty `imagemin.plugins` options", async () => {
     const input = Buffer.from("Foo");
     const filename = path.resolve("foo.png");
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: { plugins: [] },
     });
 
@@ -162,10 +183,11 @@ describe("minify", () => {
   it("should throw error on invalid `imagemin.plugins` options", async () => {
     const input = Buffer.from("Foo");
     const filename = path.resolve("foo.png");
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: { plugins: false },
     });
 
@@ -183,10 +205,11 @@ describe("minify", () => {
 
   it("should return original content and emit a error on invalid content (`String`)", async () => {
     const input = "Foo";
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename: "foo.jpg",
+      getPathWithInfoFn,
       minimizerOptions: { plugins: ["mozjpeg"] },
     });
 
@@ -198,10 +221,11 @@ describe("minify", () => {
   it("should optimize (configuration using `function`)", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: ["mozjpeg"],
       },
@@ -221,10 +245,11 @@ describe("minify", () => {
   it("should optimize (configuration using `string`)", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: ["mozjpeg"],
       },
@@ -244,10 +269,11 @@ describe("minify", () => {
   it("should optimize (configuration using `array`)", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: [["mozjpeg", { quality: 0 }]],
       },
@@ -267,10 +293,11 @@ describe("minify", () => {
   it("should optimize (configuration using `array` without options)", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: [["mozjpeg"]],
       },
@@ -290,10 +317,11 @@ describe("minify", () => {
   it("should optimize (configuration using `string` with full name)", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: ["imagemin-mozjpeg"],
       },
@@ -313,10 +341,11 @@ describe("minify", () => {
   it("should optimize (configuration using `array` with full name)", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: [["imagemin-mozjpeg", { quality: 0 }]],
       },
@@ -336,10 +365,11 @@ describe("minify", () => {
   it("should optimize (configuration using `array` with full name and without options)", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: [["imagemin-mozjpeg"]],
       },
@@ -359,10 +389,11 @@ describe("minify", () => {
   it("should throw error on empty `imagemin` options (configuration using `string` and starting with `imagemin`)", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: ["imagemin-unknown"],
       },
@@ -380,10 +411,11 @@ describe("minify", () => {
   it("should optimize and throw error on unknown plugin (configuration using `string`)", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: ["imagemin-mozjpeg", "unknown"],
       },
@@ -406,10 +438,11 @@ describe("minify", () => {
   it("should optimize and throw warning on using `Function` configuration", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: {
         plugins: [imageminMozjpeg()],
       },
@@ -435,10 +468,11 @@ describe("minify", () => {
 
     const filename = path.resolve(__dirname, "./fixtures/svg-with-id.svg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
-      minify: imageminMinify,
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminMinify,
       input,
       filename,
+      getPathWithInfoFn,
       minimizerOptions: { plugins: [["svgo", svgoOptions]] },
     });
 
@@ -455,18 +489,132 @@ describe("minify", () => {
   it("should throw two errors", async () => {
     const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
     const input = await pify(fs.readFile)(filename);
-    const result = await minify({
+    const [result] = await minify({
       minify: [
         () => ({ errors: [new Error("fail")] }),
         () => ({ errors: [new Error("fail")] }),
       ],
       input,
       filename,
+      getPathWithInfoFn,
     });
 
     expect(result.errors).toHaveLength(2);
     expect(result.errors[0].toString()).toMatch(/Error: fail/);
     expect(result.errors[1].toString()).toMatch(/Error: fail/);
     expect(result.filename).toBe(filename);
+  });
+
+  it("should transform with ImageMinimizerPlugin.imageminGenerate", async () => {
+    const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
+    const input = await pify(fs.readFile)(filename);
+    const [, result] = await minify({
+      minify: ImageMinimizerPlugin.imageminGenerate,
+      input,
+      filename,
+      getPathWithInfoFn,
+      minimizerOptions: {
+        plugins: ["imagemin-webp"],
+      },
+    });
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.errors).toHaveLength(0);
+
+    const optimizedSource = await imagemin.buffer(input, {
+      plugins: [imageminWebp()],
+    });
+
+    expect(result.data.equals(optimizedSource)).toBe(true);
+  });
+
+  it("should emit warning on imagemin unknown plugin", async () => {
+    const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
+    const input = await pify(fs.readFile)(filename);
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminGenerate,
+      input,
+      filename,
+      getPathWithInfoFn,
+      minimizerOptions: {
+        plugins: ["imagemin-unknown"],
+      },
+    });
+
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0].toString()).toMatch(/Error: Unknown plugin/);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("should emit warning on imagemin when no plugins", async () => {
+    const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
+    const input = await pify(fs.readFile)(filename);
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminGenerate,
+      input,
+      filename,
+      getPathWithInfoFn,
+      minimizerOptions: {},
+    });
+
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0].toString()).toMatch(/Error: No plugins found/);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("should emit error when imagemin.buffer has error", async () => {
+    const imageminBufferSpy = jest
+      .spyOn(imagemin, "buffer")
+      .mockImplementation(() => {
+        throw new Error("test error");
+      });
+
+    const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
+    const input = await pify(fs.readFile)(filename);
+    const [result] = await minify({
+      minify: ImageMinimizerPlugin.imageminGenerate,
+      input,
+      filename,
+      getPathWithInfoFn,
+      minimizerOptions: {
+        deleteOriginalAssets: true,
+        plugins: ["imagemin-avif", "imagemin-webp"],
+      },
+    });
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0].toString()).toMatch(/Error: test error/);
+
+    imageminBufferSpy.mockRestore();
+  });
+
+  it("should transform to webp and emit one error when imagemin.buffer has error", async () => {
+    const imageminSpy = jest
+      .spyOn(imagemin, "buffer")
+      .mockImplementationOnce(() => {
+        throw new Error("test error");
+      });
+
+    const filename = path.resolve(__dirname, "./fixtures/loader-test.jpg");
+    const input = await pify(fs.readFile)(filename);
+    const [inputAsset, resultWebp] = await minify({
+      minify: ImageMinimizerPlugin.imageminGenerate,
+      input,
+      filename,
+      getPathWithInfoFn,
+      minimizerOptions: {
+        plugins: ["imagemin-avif", "imagemin-webp"],
+      },
+    });
+
+    const ext = await fileType.fromBuffer(resultWebp.data);
+
+    expect(/image\/webp/i.test(ext.mime)).toBe(true);
+    expect(inputAsset.warnings).toHaveLength(0);
+    expect(inputAsset.errors).toHaveLength(1);
+    expect(inputAsset.errors[0].toString()).toMatch(/Error: test error/);
+
+    imageminSpy.mockRestore();
   });
 });
