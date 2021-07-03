@@ -28,16 +28,6 @@
       "description": "Allows to choose how errors are displayed.",
       "type": "string"
     },
-    "filename": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "instanceof": "Function"
-        }
-      ]
-    },
     "minify": {
       "description": "Allows you to override default minify function.",
       "anyOf": [
