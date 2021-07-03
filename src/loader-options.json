@@ -24,10 +24,6 @@
         }
       ]
     },
-    "filter": {
-      "description": "Allows filtering of images for optimization.",
-      "instanceof": "Function"
-    },
     "severityError": {
       "description": "Allows to choose how errors are displayed.",
       "type": "string"
