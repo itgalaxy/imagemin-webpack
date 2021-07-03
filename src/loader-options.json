@@ -38,9 +38,6 @@
         }
       ]
     },
-    "deleteOriginalAssets": {
-      "type": "boolean"
-    },
     "minify": {
       "description": "Allows you to override default minify function.",
       "anyOf": [
