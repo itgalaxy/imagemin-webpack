@@ -4,95 +4,86 @@ import minify from "./minify";
 import schema from "./loader-options.json";
 import imageminMinify from "./utils/imageminMinify";
 
-/**
- * @typedef {Object} LoaderOptions
- * @property {FilterFn} [filter] Allows filtering of images for optimization.
- * @property {string} [severityError] Allows to choose how errors are displayed.
- * @property {MinimizerOptions} [minimizerOptions] Options for `imagemin`.
- * @property {string} [filename] Allows to set the filename for the generated asset. Useful for converting to a `webp`.
- * @property {boolean} [deleteOriginalAssets] Allows to remove original assets. Useful for converting to a `webp` and remove original assets.
- * @property {MinifyFunctions} [minify]
- */
-
-/** @typedef {import("./index").FilterFn} FilterFn */
 /** @typedef {import("./index").Rules} Rules */
 /** @typedef {import("./index").MinimizerOptions} MinimizerOptions */
 /** @typedef {import("./index").MinifyFunctions} MinifyFunctions */
 /** @typedef {import("./index").InternalMinifyOptions} InternalMinifyOptions */
+/** @typedef {import("./index").MinifyFnResult} MinifyFnResult */
 /** @typedef {import("schema-utils/declarations/validate").Schema} Schema */
-/** @typedef {import("webpack").LoaderContext<LoaderOptions>} LoaderContext */
 /** @typedef {import("webpack").Compilation} Compilation */
 
 /**
- * @this {LoaderContext}
- * @param {Buffer} content
+ * @typedef {Object} LoaderOptions
+ * @property {string} [severityError] Allows to choose how errors are displayed.
+ * @property {MinimizerOptions} [minimizerOptions] Options for `imagemin`, `squoosh` or custom function.
+ * @property {string} [filename] Allows to set the filename for the generated asset. Useful for converting to a `webp`.
+ * @property {MinifyFunctions} [minify]
  */
-module.exports = async function loader(content) {
+
+/** @typedef {import("webpack").RawLoaderDefinition<LoaderOptions>} ImageMinimizerRawLoaderDefinition */
+
+/**
+ * @type {ImageMinimizerRawLoaderDefinition}
+ */
+// @ts-ignore Due workaround for renaming modules
+// eslint-disable-next-line func-style
+const loader = async function (content) {
   const options = this.getOptions(/** @type {Schema} */ (schema));
-  const callback = this.async();
+
   const name = path.relative(this.rootContext, this.resourcePath);
-
-  if (options.filter && !options.filter(content, name)) {
-    callback(null, content);
-
-    return;
-  }
-
-  const input = content;
-
-  const { severityError, minimizerOptions } = options;
-
+  const parsedQuery = new URLSearchParams(this.resourceQuery);
+  const compilation = /** @type {Compilation} */ (this._compilation);
   const minifyOptions = /** @type {InternalMinifyOptions} */ ({
-    minify: options.minify || imageminMinify,
-    input,
     filename: name,
-    severityError,
-    minimizerOptions,
-    isProductionMode: this.mode === "production" || !this.mode,
+    input: content,
+    info: {},
+    minify: options.minify || imageminMinify,
+    minimizerOptions: options.minimizerOptions,
+    severityError: options.severityError,
+    generateFilename: compilation.getAssetPath.bind(compilation),
   });
-
+  const preset = parsedQuery.get("preset");
   const output = await minify(minifyOptions);
 
-  if (output.errors && output.errors.length > 0) {
-    output.errors.forEach((warning) => {
-      this.emitError(warning);
-    });
+  /**
+   * @type {MinifyFnResult | undefined}
+   */
+  const item = preset
+    ? output.find((possibleItem) => possibleItem.filename.endsWith(preset))
+    : output[0];
 
-    callback(null, content);
-
-    return;
+  if (!item) {
+    throw new Error("Can't found preset");
   }
 
-  if (output.warnings && output.warnings.length > 0) {
-    output.warnings.forEach((warning) => {
-      this.emitWarning(warning);
-    });
-  }
-
-  const source = output.data;
-  const { path: newName } = /** @type {Compilation} */ (
-    this._compilation
-  ).getPathWithInfo(options.filename || "[path][name][ext]", {
-    filename: name,
+  item.errors.forEach((error) => {
+    this.emitError(error);
   });
 
-  const isNewAsset = name !== newName;
+  item.warnings.forEach((warning) => {
+    this.emitWarning(warning);
+  });
 
-  if (isNewAsset) {
-    this.emitFile(newName, source.toString(), "", {
-      minimized: true,
-    });
+  parsedQuery.delete("preset");
 
-    if (options.deleteOriginalAssets) {
-      // TODO remove original asset
-    }
+  const stringifiedParsedQuery = parsedQuery.toString();
+  const query =
+    stringifiedParsedQuery.length > 0 ? `?${stringifiedParsedQuery}` : "";
 
-    callback(null, content);
+  // TODO check watch/resolver
+  // TODO change `resource` too
+  // For `file-loader` and other old loaders
+  this.resourcePath = path.join(this.rootContext, item.filename);
+  this.resourceQuery = query;
 
-    return;
+  // For assets modules
+  if (this._module && !this._module.matchResource) {
+    this._module.matchResource = `${item.filename}${query}`;
   }
 
-  callback(null, source);
+  return item.data;
 };
 
-module.exports.raw = true;
+loader.raw = true;
+
+module.exports = loader;

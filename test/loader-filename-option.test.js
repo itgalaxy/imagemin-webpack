@@ -4,6 +4,8 @@ import fileType from "file-type";
 
 import { fixturesPath, webpack, clearDirectory } from "./helpers";
 
+import ImageMinimizerPlugin from "../src";
+
 describe('loader "filename" option', () => {
   beforeAll(() => clearDirectory(path.resolve(__dirname, "outputs")));
   afterAll(() => clearDirectory(path.resolve(__dirname, "outputs")));
@@ -16,8 +18,9 @@ describe('loader "filename" option', () => {
         path: outputDir,
       },
       imageminPluginOptions: {
-        filename: "[name].webp",
+        minify: ImageMinimizerPlugin.imageminGenerate,
         minimizerOptions: {
+          filename: "[name][ext]",
           plugins: ["imagemin-webp"],
         },
       },
@@ -46,8 +49,10 @@ describe('loader "filename" option', () => {
         path: outputDir,
       },
       imageminPluginOptions: {
-        filename: "deep/[path][name].webp",
+        minify: ImageMinimizerPlugin.imageminGenerate,
         minimizerOptions: {
+          filename: "deep/[path][name][ext]",
+          deleteOriginal: true,
           plugins: ["imagemin-webp"],
         },
       },
@@ -76,8 +81,10 @@ describe('loader "filename" option', () => {
         path: outputDir,
       },
       imageminPluginOptions: {
-        filename: "other/[name].webp",
+        minify: ImageMinimizerPlugin.imageminGenerate,
         minimizerOptions: {
+          filename: "other/[name][ext]",
+          deleteOriginal: true,
           plugins: ["imagemin-webp"],
         },
       },
@@ -106,8 +113,10 @@ describe('loader "filename" option', () => {
         path: outputDir,
       },
       imageminPluginOptions: {
-        filename: () => "other/[name].webp",
+        minify: ImageMinimizerPlugin.imageminGenerate,
         minimizerOptions: {
+          filename: () => "other/[name][ext]",
+          deleteOriginal: true,
           plugins: ["imagemin-webp"],
         },
       },

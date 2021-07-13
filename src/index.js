@@ -9,9 +9,11 @@ import serialize from "serialize-javascript";
 import minifyFn from "./minify";
 import schema from "./plugin-options.json";
 import imageminMinify, {
-  normalizeImageminConfig,
+  imageminNormalizeConfig,
 } from "./utils/imageminMinify";
+import imageminGenerate from "./utils/imageminGenerate";
 import squooshMinify from "./utils/squooshMinify";
+import squooshGenerate from "./utils/squooshGenerate";
 
 /** @typedef {import("schema-utils/declarations/validate").Schema} Schema */
 /** @typedef {import("webpack").WebpackPluginInstance} WebpackPluginInstance */
@@ -20,6 +22,7 @@ import squooshMinify from "./utils/squooshMinify";
 /** @typedef {import("webpack").WebpackError} WebpackError */
 /** @typedef {import("webpack").Asset} Asset */
 /** @typedef {import("webpack").AssetInfo} AssetInfo */
+/** @typedef {import("webpack").sources.RawSource} RawSource */
 /** @typedef {import("imagemin").Options} ImageminOptions */
 /** @typedef {import("./loader").LoaderOptions} LoaderOptions */
 /** @typedef {import("./utils/imageminMinify").default} ImageminMinifyFunction */
@@ -30,14 +33,25 @@ import squooshMinify from "./utils/squooshMinify";
 /** @typedef {Rule[] | Rule} Rules */
 
 /**
+ * @typedef {Record.<string, Buffer>} DataForMinifyFn
+ */
+
+/**
  * @callback FilterFn
- * @param {Buffer} source `Buffer` of source file.
- * @param {string} sourcePath Absolute path to source.
+ * @param {MinifyFnResult} input
  * @returns {boolean}
  */
 
 /**
- * @typedef {Record.<string, Buffer>} DataForMinifyFn
+ * @typedef {Object} PathData
+ * @property {string} [filename]
+ */
+
+/**
+ * @typedef {Object} KnownMinimizerOptions
+ * @property {FilterFn} [filter]
+ * @property {string | function(PathData, AssetInfo=): string} [filename]
+ * @property {boolean} [deleteOriginal] Allows to remove original assets.
  */
 
 /**
@@ -48,51 +62,55 @@ import squooshMinify from "./utils/squooshMinify";
 
 /**
  * @typedef {Object} SquooshMinimizerOptions
- * @property {Object.<string, string>} [targets]
  * @property {Object.<string, object>} [encodeOptions]
  */
 
 /**
- * @typedef {Record<string, any>} CustomFnMinimizerOptions
+ * @typedef {Object.<string, any>} CustomFnMinimizerOptions
  */
 
 /**
- * @typedef {ImageminMinimizerOptions | SquooshMinimizerOptions | CustomFnMinimizerOptions} MinimizerOptions
+ * @typedef {KnownMinimizerOptions & ImageminMinimizerOptions | KnownMinimizerOptions & SquooshMinimizerOptions | KnownMinimizerOptions & CustomFnMinimizerOptions} MinimizerOptions
  */
 
 /**
  * @typedef {Object} InternalMinifyOptions
  * @property {string} filename
  * @property {Buffer} input
- * @property {string} [severityError]
- * @property {MinimizerOptions} [minimizerOptions]
+ * @property {AssetInfo} info
  * @property {MinifyFunctions} minify
- */
-
-/**
- * @typedef {Object} InternalMinifyResult
- * @property {Buffer} data
- * @property {string} filename
- * @property {Array<Error>} warnings
- * @property {Array<Error>} errors
- */
-
-/**
- * @callback CustomMinifyFunction
- * @param {DataForMinifyFn} data
- * @param {CustomFnMinimizerOptions} minifyOptions
- * @returns {InternalMinifyResult}
- */
-
-/**
- * @typedef {ImageminMinifyFunction | SquooshMinifyFunction | CustomMinifyFunction} MinifyFunctions
+ * @property {MinimizerOptions} [minimizerOptions]
+ * @property {string} [severityError]
+ * @property {Compilation["getAssetPath"]} generateFilename
  */
 
 /**
  * @typedef {Object} MinifyFnResult
+ * @property {string} filename
  * @property {Buffer} data
  * @property {Array<Error>} warnings
  * @property {Array<Error>} errors
+ * @property {AssetInfo} info
+ */
+
+/**
+ * @typedef {Object} MinifyFnSourceResult
+ * @property {string} filename
+ * @property {RawSource} data
+ * @property {Array<Error>} warnings
+ * @property {Array<Error>} errors
+ * @property {AssetInfo} info
+ */
+
+/**
+ * @callback CustomMinifyFunction
+ * @param {MinifyFnResult} original
+ * @param {CustomFnMinimizerOptions} minifyOptions
+ * @returns {MinifyFnResult | MinifyFnResult[]}
+ */
+
+/**
+ * @typedef {ImageminMinifyFunction | SquooshMinifyFunction | CustomMinifyFunction} MinifyFunctions
  */
 
 /**
@@ -105,20 +123,7 @@ import squooshMinify from "./utils/squooshMinify";
  */
 
 /**
- * @typedef {Object} PathData
- * @property {string} [filename]
- */
-
-/**
- * @callback FilenameFn
- * @param {PathData} pathData
- * @param {AssetInfo} [assetInfo]
- * @returns {string}
- */
-
-/**
  * @typedef {Object} PluginOptions
- * @property {FilterFn} [filter] Allows filtering of images for optimization.
  * @property {Rules} [test] Test to match files against.
  * @property {Rules} [include] Files to include.
  * @property {Rules} [exclude] Files to exclude.
@@ -126,8 +131,6 @@ import squooshMinify from "./utils/squooshMinify";
  * @property {MinimizerOptions} [minimizerOptions] Options for `imagemin`.
  * @property {boolean} [loader] Automatically adding `imagemin-loader`.
  * @property {number} [maxConcurrency] Maximum number of concurrency optimization processes in one time.
- * @property {string | FilenameFn} [filename] Allows to set the filename for the generated asset. Useful for converting to a `webp`.
- * @property {boolean} [deleteOriginalAssets] Allows to remove original assets. Useful for converting to a `webp` and remove original assets.
  * @property {MinifyFunctions} [minify]
  */
 
@@ -146,7 +149,6 @@ class ImageMinimizerPlugin {
 
     const {
       minify = imageminMinify,
-      filter = () => true,
       test = /\.(jpe?g|png|gif|tif|webp|svg|avif)$/i,
       include,
       exclude,
@@ -156,22 +158,17 @@ class ImageMinimizerPlugin {
       },
       loader = true,
       maxConcurrency,
-      filename = "[path][name][ext]",
-      deleteOriginalAssets = false,
     } = options;
 
     this.options = {
       minify,
       severityError,
-      filter,
       exclude,
       minimizerOptions,
       include,
       loader,
       maxConcurrency,
       test,
-      filename,
-      deleteOriginalAssets,
     };
   }
 
@@ -188,12 +185,11 @@ class ImageMinimizerPlugin {
     const assetsForMinify = await Promise.all(
       Object.keys(assets)
         .filter((name) => {
-          const { info, source } = /** @type {Asset} */ (
-            compilation.getAsset(name)
-          );
+          const { info } = /** @type {Asset} */ (compilation.getAsset(name));
 
           // Skip double minimize assets from child compilation
-          if (info.minimized) {
+          // TODO possible bug
+          if (info.minimized || info.generated) {
             return false;
           }
 
@@ -206,17 +202,9 @@ class ImageMinimizerPlugin {
             return false;
           }
 
+          // TODO improve check
           // Exclude already optimized assets from `image-minimizer-webpack-loader`
           if (this.options.loader && moduleAssets.has(name)) {
-            return false;
-          }
-
-          const input = source.source();
-
-          if (
-            this.options.filter &&
-            !this.options.filter(/** @type {Buffer} */ (input), name)
-          ) {
             return false;
           }
 
@@ -229,11 +217,15 @@ class ImageMinimizerPlugin {
 
           const cacheName = serialize({
             name,
+            minify: this.options.minify,
             minimizerOptions: this.options.minimizerOptions,
           });
 
           const eTag = cache.getLazyHashedEtag(source);
           const cacheItem = cache.getItemCache(cacheName, eTag);
+          /**
+           * @type {MinifyFnSourceResult[] | undefined}
+           */
           const output = await cacheItem.getPromise();
 
           return { name, info, inputSource: source, output, cacheItem };
@@ -252,11 +244,10 @@ class ImageMinimizerPlugin {
     for (const asset of assetsForMinify) {
       scheduledTasks.push(
         limit(async () => {
-          const { name, inputSource, cacheItem, info } = asset;
           let { output } = asset;
           let input;
 
-          const sourceFromInputSource = inputSource.source();
+          const sourceFromInputSource = asset.inputSource.source();
 
           if (!output) {
             input = sourceFromInputSource;
@@ -268,68 +259,66 @@ class ImageMinimizerPlugin {
             const { severityError, minimizerOptions, minify } = this.options;
 
             const minifyOptions = /** @type {InternalMinifyOptions} */ ({
-              filename: name,
+              filename: asset.name,
               input,
-              severityError,
-              minimizerOptions,
+              info: asset.info,
               minify,
+              minimizerOptions,
+              severityError,
+              generateFilename: compilation.getAssetPath.bind(compilation),
             });
 
-            output = await minifyFn(minifyOptions);
+            /** @type {MinifyFnSourceResult[]} */
+            (output) = (await minifyFn(minifyOptions)).map((item) => ({
+              filename: item.filename,
+              data: new RawSource(item.data),
+              info: item.info,
+              errors: item.errors,
+              warnings: item.warnings,
+            }));
 
-            if (output.errors.length > 0) {
-              /** @type {[WebpackError]} */
-              (output.errors).forEach((error) => {
-                compilation.errors.push(error);
-              });
-
-              return;
-            }
-
-            output.source = new RawSource(output.data);
-
-            await cacheItem.storePromise({
-              source: output.source,
-              warnings: output.warnings,
-            });
+            await asset.cacheItem.storePromise(output);
           }
 
-          const { source, warnings } = output;
-
-          if (warnings && warnings.length > 0) {
-            /** @type {[WebpackError]} */
-            (warnings).forEach((warning) => {
-              compilation.warnings.push(warning);
-            });
-          }
-
-          const { path: newName } = compilation.getPathWithInfo(
-            this.options.filename,
-            {
-              filename: name,
-            }
+          /**
+           * @type {Boolean}
+           */
+          const hasOriginal = output.some(
+            (item) => item.filename === asset.name
           );
 
-          const isNewAsset = name !== newName;
-
-          if (isNewAsset) {
-            const newInfo = {
-              related: { minimized: newName, ...info.related },
-              minimized: true,
-            };
-
-            compilation.emitAsset(newName, source, newInfo);
-
-            if (this.options.deleteOriginalAssets) {
-              compilation.deleteAsset(name);
-            }
-          } else {
-            const updatedAssetsInfo = {
-              minimized: true,
-            };
-
-            compilation.updateAsset(name, source, updatedAssetsInfo);
+          if (!hasOriginal) {
+            compilation.deleteAsset(asset.name);
           }
+
+          /** @type {MinifyFnSourceResult[]} */
+          (output).forEach((item) => {
+            /** @type {[WebpackError]} */
+            (item.warnings).forEach((warning) => {
+              compilation.warnings.push(warning);
+            });
+
+            /** @type {[WebpackError]} */
+            (item.errors).forEach((error) => {
+              compilation.errors.push(error);
+            });
+
+            if (compilation.getAsset(item.filename)) {
+              compilation.updateAsset(item.filename, item.data, item.info);
+            } else {
+              compilation.emitAsset(item.filename, item.data, item.info);
+
+              if (hasOriginal && item.info && item.info.generated) {
+                const relatedName = Array.isArray(item.info.generatedBy)
+                  ? item.info.generatedBy.join(", ")
+                  : "imagemin-minimizer-webpack-plugin";
+
+                compilation.updateAsset(asset.name, asset.inputSource, {
+                  related: { [relatedName]: item.filename },
+                });
+              }
+            }
+          });
         })
       );
     }
@@ -359,9 +348,6 @@ class ImageMinimizerPlugin {
       compiler.hooks.afterPlugins.tap({ name: pluginName }, () => {
         const {
           minify,
-          filename,
-          deleteOriginalAssets,
-          filter,
           test,
           include,
           exclude,
@@ -377,10 +363,7 @@ class ImageMinimizerPlugin {
           loader: require.resolve(path.join(__dirname, "loader.js")),
           options: {
             minify,
-            filename,
-            deleteOriginalAssets,
             severityError,
-            filter,
             minimizerOptions,
           },
         });
@@ -399,14 +382,41 @@ class ImageMinimizerPlugin {
         },
         (assets) => this.optimize(compiler, compilation, assets, moduleAssets)
       );
+
+      compilation.hooks.statsPrinter.tap(pluginName, (stats) => {
+        stats.hooks.print
+          .for("asset.info.minimized")
+          .tap(
+            "image-minimizer-webpack-plugin",
+            (minimized, { green, formatFlag }) =>
+              minimized
+                ? /** @type {Function} */ (green)(
+                    /** @type {Function} */ (formatFlag)("minimized")
+                  )
+                : ""
+          );
+
+        stats.hooks.print
+          .for("asset.info.generated")
+          .tap(
+            "image-minimizer-webpack-plugin",
+            (minimized, { green, formatFlag }) =>
+              minimized
+                ? /** @type {Function} */ (green)(
+                    /** @type {Function} */ (formatFlag)("generated")
+                  )
+                : ""
+          );
+      });
     });
   }
 }
 
 ImageMinimizerPlugin.loader = require.resolve("./loader");
-
-ImageMinimizerPlugin.normalizeImageminConfig = normalizeImageminConfig;
+ImageMinimizerPlugin.imageminNormalizeConfig = imageminNormalizeConfig;
 ImageMinimizerPlugin.imageminMinify = imageminMinify;
+ImageMinimizerPlugin.imageminGenerate = imageminGenerate;
 ImageMinimizerPlugin.squooshMinify = squooshMinify;
+ImageMinimizerPlugin.squooshGenerate = squooshGenerate;
 
 export default ImageMinimizerPlugin;

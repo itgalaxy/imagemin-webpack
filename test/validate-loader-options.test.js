@@ -14,24 +14,66 @@ describe("validate loader options", () => {
       failure: [1, true, false, null],
     },
     minimizerOptions: {
-      success: [{ plugins: [] }, {}],
-      failure: [1, true, false, [], null],
-    },
-    filter: {
-      success: [() => false],
-      failure: [1, true, false, {}, [], null],
+      success: [
+        { plugins: [] },
+        {},
+        {
+          filename: "[name].[ext]",
+        },
+        {
+          filename: () => "[name].[ext]",
+        },
+        {
+          deleteOriginal: true,
+        },
+        {
+          filter: () => {},
+        },
+      ],
+      failure: [
+        1,
+        true,
+        false,
+        [],
+        null,
+        {
+          filename: [],
+        },
+        {
+          filename: {},
+        },
+        {
+          filename: true,
+        },
+        {
+          deleteOriginal: {},
+        },
+        {
+          deleteOriginal: [],
+        },
+        {
+          deleteOriginal: () => {},
+        },
+        {
+          filter: 1,
+        },
+        {
+          filter: true,
+        },
+        {
+          filter: {},
+        },
+        {
+          filter: [],
+        },
+        {
+          filter: null,
+        },
+      ],
     },
     severityError: {
       success: ["error"],
       failure: [true, false, {}, [], () => {}],
-    },
-    filename: {
-      success: ["[name].[ext]", () => "[name].[ext]"],
-      failure: [{}, [], true],
-    },
-    deleteOriginalAssets: {
-      success: [true, false],
-      failure: [{}, [], () => {}],
     },
     unknown: {
       success: [],
